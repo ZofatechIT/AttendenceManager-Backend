@@ -17,6 +17,8 @@ if (!fs.existsSync(assetsDir)) {
   fs.mkdirSync(assetsDir);
 }
 
+const app = express();
+
 // CORS setup for frontend
 app.use(cors({
   origin: [
