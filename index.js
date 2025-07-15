@@ -17,11 +17,11 @@ if (!fs.existsSync(assetsDir)) {
   fs.mkdirSync(assetsDir);
 }
 
-const app = express();
+// CORS setup for frontend
 app.use(cors({
   origin: [
     'https://attendence-manager-frontend.vercel.app',
-    'http://localhost:5173' // (optional, for local dev)
+    'http://localhost:5173'
   ],
   credentials: true
 }));
