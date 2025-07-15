@@ -20,8 +20,8 @@ if (!fs.existsSync(assetsDir)) {
 const app = express();
 app.use(cors({
   origin: [
-    'https://your-vercel-domain.vercel.app',
-    'http://localhost:5173'
+    'https://attendence-manager-frontend.vercel.app',
+    'http://localhost:5173' // (optional, for local dev)
   ],
   credentials: true
 }));
