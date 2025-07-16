@@ -8,6 +8,7 @@ import ExcelJS from 'exceljs';
 import path from 'path';
 import fs from 'fs';
 import multer from 'multer';
+import cloudinary from 'cloudinary';
 
 dotenv.config();
 
@@ -15,6 +16,23 @@ dotenv.config();
 const assetsDir = path.join(process.cwd(), 'assets');
 if (!fs.existsSync(assetsDir)) {
   fs.mkdirSync(assetsDir);
+}
+
+// Cloudinary config
+cloudinary.v2.config({
+  cloud_name: 'ddcd8t9pc',
+  api_key: '472572833492893',
+  api_secret: '0ToFJa9wH3zg3lI4W3fAWtG8lgw',
+});
+
+// Helper to upload a file to Cloudinary
+async function uploadToCloudinary(filePath) {
+  return new Promise((resolve, reject) => {
+    cloudinary.v2.uploader.upload(filePath, { folder: 'attendence_manager' }, (err, result) => {
+      if (err) return reject(err);
+      resolve(result.secure_url);
+    });
+  });
 }
 
 const app = express();
@@ -279,8 +297,17 @@ app.post('/api/admin/add-user', auth, upload.fields([
     const existing = await User.findOne({ employeeId });
     if (existing) return res.status(400).json({ message: 'Employee ID already exists' });
     const hashed = await bcrypt.hash(password, 10);
-    const profilePic = req.files['profilePic'] ? '/uploads/' + req.files['profilePic'][0].filename : '';
-    const idDocs = req.files['idDocs'] ? req.files['idDocs'].map(f => '/uploads/' + f.filename) : [];
+    let profilePic = '';
+    let idDocs = [];
+    if (req.files['profilePic']) {
+      profilePic = await uploadToCloudinary(req.files['profilePic'][0].path);
+    }
+    if (req.files['idDocs']) {
+      for (const file of req.files['idDocs']) {
+        const url = await uploadToCloudinary(file.path);
+        idDocs.push(url);
+      }
+    }
     const user = new User({ employeeId, password: hashed, name, isAdmin, email, phone, address, profilePic, idDocs });
     await user.save();
     res.status(201).json({ message: 'User created' });
@@ -305,17 +332,33 @@ app.get('/api/admin/user-attendance/:employeeId', auth, async (req, res) => {
   res.json(records);
 });
 
-// Admin: edit user (name, isAdmin, employeeId, password) by employeeId
-app.put('/api/admin/edit-user/:employeeId', auth, async (req, res) => {
+// Admin: edit user (name, isAdmin, employeeId, password, profilePic, idDocs) by employeeId
+app.put('/api/admin/edit-user/:employeeId', auth, upload.fields([
+  { name: 'profilePic', maxCount: 1 },
+  { name: 'idDocs', maxCount: 5 }
+]), async (req, res) => {
   if (!req.user.isAdmin) return res.status(403).json({ message: 'Forbidden' });
-  const { name, isAdmin, employeeId: newEmployeeId, password } = req.body;
+  const { name, isAdmin, employeeId: newEmployeeId, password, email, phone, address } = req.body;
   const update = {};
   if (name !== undefined) update.name = name;
   if (isAdmin !== undefined) update.isAdmin = isAdmin;
   if (newEmployeeId !== undefined) update.employeeId = newEmployeeId;
+  if (email !== undefined) update.email = email;
+  if (phone !== undefined) update.phone = phone;
+  if (address !== undefined) update.address = address;
   if (password) {
-    const bcrypt = require('bcryptjs');
     update.password = await bcrypt.hash(password, 10);
+  }
+  // Handle new profilePic and idDocs
+  if (req.files['profilePic']) {
+    update.profilePic = await uploadToCloudinary(req.files['profilePic'][0].path);
+  }
+  if (req.files['idDocs']) {
+    update.idDocs = [];
+    for (const file of req.files['idDocs']) {
+      const url = await uploadToCloudinary(file.path);
+      update.idDocs.push(url);
+    }
   }
   const user = await User.findOneAndUpdate(
     { employeeId: req.params.employeeId },
