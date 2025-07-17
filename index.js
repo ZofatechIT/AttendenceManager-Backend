@@ -8,7 +8,6 @@ import ExcelJS from 'exceljs';
 import path from 'path';
 import fs from 'fs';
 import multer from 'multer';
-import cloudinary from 'cloudinary';
 import ImageKit from 'imagekit';
 
 dotenv.config();
