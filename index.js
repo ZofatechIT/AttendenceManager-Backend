@@ -21,7 +21,7 @@ if (!fs.existsSync(assetsDir)) {
 const imagekit = new ImageKit({
   publicKey: 'public_Go7RnwiDRbJZMJsy7ZZljlZITqo=',
   privateKey: 'private_Ps1Zl4X0Ex4XL/PHNf8qSDfsipI=',
-  urlEndpoint: process.env.IMAGEKIT_URL_ENDPOINT,
+  urlEndpoint: 'https://ik.imagekit.io/nwkqadfgr/',
 });
 
 // Helper to upload a file to ImageKit
