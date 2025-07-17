@@ -302,20 +302,30 @@ app.post('/api/admin/add-user', auth, upload.fields([
     let idDocs = [];
     const folderName = `/attendence_manager/${employeeId}`;
     if (req.files['profilePic']) {
-      profilePic = await uploadToImageKit(
-        req.files['profilePic'][0].path,
-        req.files['profilePic'][0].originalname,
-        folderName
-      );
+      try {
+        profilePic = await uploadToImageKit(
+          req.files['profilePic'][0].path,
+          req.files['profilePic'][0].originalname,
+          folderName
+        );
+        console.log('ProfilePic uploaded to ImageKit:', profilePic);
+      } catch (err) {
+        console.error('Error uploading profilePic to ImageKit:', err);
+      }
     }
     if (req.files['idDocs']) {
       for (const file of req.files['idDocs']) {
-        const url = await uploadToImageKit(
-          file.path,
-          file.originalname,
-          folderName
-        );
-        idDocs.push(url);
+        try {
+          const url = await uploadToImageKit(
+            file.path,
+            file.originalname,
+            folderName
+          );
+          idDocs.push(url);
+          console.log('ID Doc uploaded to ImageKit:', url);
+        } catch (err) {
+          console.error('Error uploading ID Doc to ImageKit:', err);
+        }
       }
     }
     const user = new User({ employeeId, password: hashed, name, isAdmin, email, phone, address, profilePic, idDocs });
@@ -362,21 +372,31 @@ app.put('/api/admin/edit-user/:employeeId', auth, upload.fields([
   // Handle new profilePic and idDocs
   const folderName = `/attendence_manager/${req.params.employeeId}`;
   if (req.files['profilePic']) {
-    update.profilePic = await uploadToImageKit(
-      req.files['profilePic'][0].path,
-      req.files['profilePic'][0].originalname,
-      folderName
-    );
+    try {
+      update.profilePic = await uploadToImageKit(
+        req.files['profilePic'][0].path,
+        req.files['profilePic'][0].originalname,
+        folderName
+      );
+      console.log('ProfilePic uploaded to ImageKit (edit):', update.profilePic);
+    } catch (err) {
+      console.error('Error uploading profilePic to ImageKit (edit):', err);
+    }
   }
   if (req.files['idDocs']) {
     update.idDocs = [];
     for (const file of req.files['idDocs']) {
-      const url = await uploadToImageKit(
-        file.path,
-        file.originalname,
-        folderName
-      );
-      update.idDocs.push(url);
+      try {
+        const url = await uploadToImageKit(
+          file.path,
+          file.originalname,
+          folderName
+        );
+        update.idDocs.push(url);
+        console.log('ID Doc uploaded to ImageKit (edit):', url);
+      } catch (err) {
+        console.error('Error uploading ID Doc to ImageKit (edit):', err);
+      }
     }
   }
   const user = await User.findOneAndUpdate(
