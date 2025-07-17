@@ -9,6 +9,7 @@ import path from 'path';
 import fs from 'fs';
 import multer from 'multer';
 import cloudinary from 'cloudinary';
+import ImageKit from 'imagekit';
 
 dotenv.config();
 
@@ -18,21 +19,21 @@ if (!fs.existsSync(assetsDir)) {
   fs.mkdirSync(assetsDir);
 }
 
-// Cloudinary config
-cloudinary.v2.config({
-  cloud_name: 'ddcd8t9pc',
-  api_key: '472572833492893',
-  api_secret: '0ToFJa9wH3zg3lI4W3fAWtG8lgw',
+const imagekit = new ImageKit({
+  publicKey: process.env.IMAGEKIT_PUBLIC_KEY,
+  privateKey: process.env.IMAGEKIT_PRIVATE_KEY,
+  urlEndpoint: process.env.IMAGEKIT_URL_ENDPOINT,
 });
 
-// Helper to upload a file to Cloudinary
-async function uploadToCloudinary(filePath) {
-  return new Promise((resolve, reject) => {
-    cloudinary.v2.uploader.upload(filePath, { folder: 'attendence_manager' }, (err, result) => {
-      if (err) return reject(err);
-      resolve(result.secure_url);
-    });
+// Helper to upload a file to ImageKit
+async function uploadToImageKit(filePath, fileName, folder = '/attendence_manager') {
+  const fileBuffer = fs.readFileSync(filePath);
+  const result = await imagekit.upload({
+    file: fileBuffer,
+    fileName: fileName,
+    folder: folder,
   });
+  return result.url;
 }
 
 const app = express();
@@ -299,12 +300,21 @@ app.post('/api/admin/add-user', auth, upload.fields([
     const hashed = await bcrypt.hash(password, 10);
     let profilePic = '';
     let idDocs = [];
+    const folderName = `/attendence_manager/${employeeId}`;
     if (req.files['profilePic']) {
-      profilePic = await uploadToCloudinary(req.files['profilePic'][0].path);
+      profilePic = await uploadToImageKit(
+        req.files['profilePic'][0].path,
+        req.files['profilePic'][0].originalname,
+        folderName
+      );
     }
     if (req.files['idDocs']) {
       for (const file of req.files['idDocs']) {
-        const url = await uploadToCloudinary(file.path);
+        const url = await uploadToImageKit(
+          file.path,
+          file.originalname,
+          folderName
+        );
         idDocs.push(url);
       }
     }
@@ -350,13 +360,22 @@ app.put('/api/admin/edit-user/:employeeId', auth, upload.fields([
     update.password = await bcrypt.hash(password, 10);
   }
   // Handle new profilePic and idDocs
+  const folderName = `/attendence_manager/${req.params.employeeId}`;
   if (req.files['profilePic']) {
-    update.profilePic = await uploadToCloudinary(req.files['profilePic'][0].path);
+    update.profilePic = await uploadToImageKit(
+      req.files['profilePic'][0].path,
+      req.files['profilePic'][0].originalname,
+      folderName
+    );
   }
   if (req.files['idDocs']) {
     update.idDocs = [];
     for (const file of req.files['idDocs']) {
-      const url = await uploadToCloudinary(file.path);
+      const url = await uploadToImageKit(
+        file.path,
+        file.originalname,
+        folderName
+      );
       update.idDocs.push(url);
     }
   }

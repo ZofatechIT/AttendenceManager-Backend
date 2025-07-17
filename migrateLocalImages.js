@@ -2,28 +2,16 @@ import mongoose from 'mongoose';
 import fs from 'fs';
 import path from 'path';
 import dotenv from 'dotenv';
-import cloudinary from 'cloudinary';
+import ImageKit from 'imagekit';
 
 dotenv.config();
 
-// Cloudinary config (same as in index.js)
-cloudinary.v2.config({
-  cloud_name: 'ddcd8t9pc',
-  api_key: '472572833492893',
-  api_secret: '0ToFJa9wH3zg3lI4W3fAWtG8lgw',
+const imagekit = new ImageKit({
+  publicKey: process.env.IMAGEKIT_PUBLIC_KEY,
+  privateKey: process.env.IMAGEKIT_PRIVATE_KEY,
+  urlEndpoint: process.env.IMAGEKIT_URL_ENDPOINT,
 });
 
-// Helper to upload a file to Cloudinary
-async function uploadToCloudinary(filePath) {
-  return new Promise((resolve, reject) => {
-    cloudinary.v2.uploader.upload(filePath, { folder: 'attendence_manager' }, (err, result) => {
-      if (err) return reject(err);
-      resolve(result.secure_url);
-    });
-  });
-}
-
-// Connect to MongoDB
 mongoose.connect(process.env.MONGODB_URI, {
   useNewUrlParser: true,
   useUnifiedTopology: true,
@@ -42,16 +30,27 @@ const userSchema = new mongoose.Schema({
 });
 const User = mongoose.model('User', userSchema);
 
+async function uploadToImageKit(filePath, fileName, folder = '/attendence_manager') {
+  const fileBuffer = fs.readFileSync(filePath);
+  const result = await imagekit.upload({
+    file: fileBuffer,
+    fileName: fileName,
+    folder: folder,
+  });
+  return result.url;
+}
+
 async function migrate() {
   const users = await User.find({});
   for (const user of users) {
     let updated = false;
+    const folderName = `/attendence_manager/${user.employeeId}`;
 
     // Migrate profilePic
     if (user.profilePic && user.profilePic.startsWith('/uploads/')) {
       const localPath = path.join(process.cwd(), '..', user.profilePic);
       if (fs.existsSync(localPath)) {
-        const url = await uploadToCloudinary(localPath);
+        const url = await uploadToImageKit(localPath, path.basename(localPath), folderName);
         user.profilePic = url;
         updated = true;
         console.log(`Migrated profilePic for ${user.employeeId}`);
@@ -65,7 +64,7 @@ async function migrate() {
         if (doc.startsWith('/uploads/')) {
           const localPath = path.join(process.cwd(), '..', doc);
           if (fs.existsSync(localPath)) {
-            const url = await uploadToCloudinary(localPath);
+            const url = await uploadToImageKit(localPath, path.basename(localPath), folderName);
             newDocs.push(url);
             updated = true;
             console.log(`Migrated idDoc for ${user.employeeId}`);
