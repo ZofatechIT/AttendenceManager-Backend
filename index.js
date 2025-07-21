@@ -239,7 +239,8 @@ app.post('/api/login', async (req, res) => {
     const valid = await bcrypt.compare(password, user.password);
     if (!valid) return res.status(400).json({ message: 'Invalid credentials' });
     const token = jwt.sign({ id: user._id, isAdmin: user.isAdmin }, process.env.JWT_SECRET, { expiresIn: '1d' });
-    res.json({ token, user: { employeeId: user.employeeId, name: user.name, isAdmin: user.isAdmin } });
+    const userWithLocation = await User.findById(user._id).populate('location');
+    res.json({ token, user: userWithLocation });
   } catch (err) {
     res.status(500).json({ message: 'Server error' });
   }
@@ -349,7 +350,7 @@ app.post('/api/admin/add-user', auth, upload.fields([
 // Admin: get all users
 app.get('/api/admin/users', auth, async (req, res) => {
   if (!req.user.isAdmin) return res.status(403).json({ message: 'Forbidden' });
-  const users = await User.find({}, 'employeeId name isAdmin email phone address profilePic idDocs location');
+  const users = await User.find({}, 'employeeId name isAdmin email phone address profilePic idDocs location').populate('location');
   res.json(users);
 });
 
