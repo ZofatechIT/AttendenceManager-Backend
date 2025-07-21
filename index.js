@@ -21,7 +21,7 @@ if (!fs.existsSync(assetsDir)) {
 const imagekit = new ImageKit({
   publicKey: 'public_Go7RnwiDRbJZMJsy7ZZljlZITqo=',
   privateKey: 'private_Ps1Zl4X0Ex4XL/PHNf8qSDfsipI=',
-  urlEndpoint: 'https://ik.imagekit.io/nwkqadfgr/',
+  urlEndpoint: process.env.IMAGEKIT_URL_ENDPOINT,
 });
 
 // Helper to upload a file to ImageKit
@@ -81,9 +81,15 @@ const userSchema = new mongoose.Schema({
   address: String,
   profilePic: String, // URL or path
   idDocs: [String],   // Array of URLs or paths
+  location: { type: mongoose.Schema.Types.ObjectId, ref: 'Location' },
 });
 
 const User = mongoose.model('User', userSchema);
+
+const locationSchema = new mongoose.Schema({
+  name: { type: String, required: true, unique: true },
+});
+const Location = mongoose.model('Location', locationSchema);
 
 const attendanceSchema = new mongoose.Schema({
   userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
@@ -293,7 +299,7 @@ app.post('/api/admin/add-user', auth, upload.fields([
 ]), async (req, res) => {
   if (!req.user.isAdmin) return res.status(403).json({ message: 'Forbidden' });
   try {
-    const { employeeId, password, name, isAdmin, email, phone, address } = req.body;
+    const { employeeId, password, name, isAdmin, email, phone, address, location } = req.body;
     const existing = await User.findOne({ employeeId });
     if (existing) return res.status(400).json({ message: 'Employee ID already exists' });
     const hashed = await bcrypt.hash(password, 10);
@@ -327,7 +333,7 @@ app.post('/api/admin/add-user', auth, upload.fields([
         }
       }
     }
-    const user = new User({ employeeId, password: hashed, name, isAdmin, email, phone, address, profilePic, idDocs });
+    const user = new User({ employeeId, password: hashed, name, isAdmin, email, phone, address, profilePic, idDocs, location: location || null });
     await user.save();
     res.status(201).json({ message: 'User created' });
   } catch (err) {
@@ -338,8 +344,35 @@ app.post('/api/admin/add-user', auth, upload.fields([
 // Admin: get all users
 app.get('/api/admin/users', auth, async (req, res) => {
   if (!req.user.isAdmin) return res.status(403).json({ message: 'Forbidden' });
-  const users = await User.find({}, 'employeeId name isAdmin email phone address profilePic idDocs');
+  const users = await User.find({}, 'employeeId name isAdmin email phone address profilePic idDocs location');
   res.json(users);
+});
+
+// Admin: Get all locations
+app.get('/api/admin/locations', auth, async (req, res) => {
+  if (!req.user.isAdmin) return res.status(403).json({ message: 'Forbidden' });
+  try {
+    const locations = await Location.find({});
+    res.json(locations);
+  } catch (err) {
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// Admin: Add a new location
+app.post('/api/admin/add-location', auth, async (req, res) => {
+  if (!req.user.isAdmin) return res.status(403).json({ message: 'Forbidden' });
+  try {
+    const { name } = req.body;
+    if (!name) return res.status(400).json({ message: 'Location name is required' });
+    const existing = await Location.findOne({ name });
+    if (existing) return res.status(400).json({ message: 'Location already exists' });
+    const location = new Location({ name });
+    await location.save();
+    res.status(201).json(location);
+  } catch (err) {
+    res.status(500).json({ message: 'Server error' });
+  }
 });
 
 // Admin: get all attendance for a user by employeeId
@@ -357,7 +390,7 @@ app.put('/api/admin/edit-user/:employeeId', auth, upload.fields([
   { name: 'idDocs', maxCount: 5 }
 ]), async (req, res) => {
   if (!req.user.isAdmin) return res.status(403).json({ message: 'Forbidden' });
-  const { name, isAdmin, employeeId: newEmployeeId, password, email, phone, address } = req.body;
+  const { name, isAdmin, employeeId: newEmployeeId, password, email, phone, address, location } = req.body;
   const update = {};
   if (name !== undefined) update.name = name;
   if (isAdmin !== undefined) update.isAdmin = isAdmin;
@@ -365,6 +398,7 @@ app.put('/api/admin/edit-user/:employeeId', auth, upload.fields([
   if (email !== undefined) update.email = email;
   if (phone !== undefined) update.phone = phone;
   if (address !== undefined) update.address = address;
+  if (location !== undefined) update.location = location;
   if (password) {
     update.password = await bcrypt.hash(password, 10);
   }
