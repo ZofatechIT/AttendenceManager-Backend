@@ -53,13 +53,43 @@ app.use(cors({
 }));
 app.use(express.json());
 
+// Basic health check endpoint
+app.get('/', (req, res) => {
+  res.json({ status: 'Attendance Manager Backend Running' });
+});
+
+// Login API
+app.post('/api/login', async (req, res) => {
+  try {
+    const { employeeId, password } = req.body;
+    if (!employeeId || !password) {
+      return res.status(400).json({ message: 'Employee ID and password are required' });
+    }
+    const user = await User.findOne({ employeeId });
+    if (!user) return res.status(400).json({ message: 'Invalid credentials' });
+    const valid = await bcrypt.compare(password, user.password);
+    if (!valid) return res.status(400).json({ message: 'Invalid credentials' });
+    const token = jwt.sign({ id: user._id, isAdmin: user.isAdmin }, process.env.JWT_SECRET || 'your-secret-key', { expiresIn: '1d' });
+    const userWithLocation = await User.findById(user._id).populate('location');
+    res.json({ token, user: userWithLocation });
+  } catch (err) {
+    console.error('Login error:', err);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// Error handling for invalid routes
+app.use((req, res) => {
+  res.status(404).json({ message: 'Not Found' });
+});
+
 // Error handling middleware
 app.use((err, req, res, next) => {
   console.error(err.stack);
   res.status(500).json({ message: 'Something broke!' });
 });
 
-mongoose.connect(process.env.MONGODB_URI, {
+mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/attendance', {
   useNewUrlParser: true,
   useUnifiedTopology: true,
 }).then(() => {
@@ -237,28 +267,12 @@ app.post('/api/signup', async (req, res) => {
   }
 });
 
-// Login API
-app.post('/api/ ', async (req, res) => {
-  try {
-    const { employeeId, password } = req.body;
-    const user = await User.findOne({ employeeId });
-    if (!user) return res.status(400).json({ message: 'Invalid credentials' });
-    const valid = await bcrypt.compare(password, user.password);
-    if (!valid) return res.status(400).json({ message: 'Invalid credentials' });
-    const token = jwt.sign({ id: user._id, isAdmin: user.isAdmin }, process.env.JWT_SECRET, { expiresIn: '1d' });
-    const userWithLocation = await User.findById(user._id).populate('location');
-    res.json({ token, user: userWithLocation });
-  } catch (err) {
-    res.status(500).json({ message: 'Server error' });
-  }
-});
-
 // Middleware to verify JWT
 function auth(req, res, next) {
   const token = req.headers.authorization?.split(' ')[1];
   if (!token) return res.status(401).json({ message: 'No token' });
   try {
-    req.user = jwt.verify(token, process.env.JWT_SECRET);
+    req.user = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
     next();
   } catch {
     res.status(401).json({ message: 'Invalid token' });
@@ -535,10 +549,6 @@ app.put('/api/admin/attendance/record/:id', auth, async (req, res) => {
     console.error('Error updating attendance record:', err);
     res.status(500).json({ message: 'Server error' });
   }
-});
-
-app.get('/', (req, res) => {
-  res.send('Attendance Manager Backend Running');
 });
 
 const PORT = process.env.PORT || 5001;
