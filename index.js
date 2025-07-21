@@ -375,6 +375,27 @@ app.post('/api/admin/add-location', auth, async (req, res) => {
   }
 });
 
+// Admin: Delete a location
+app.delete('/api/admin/delete-location/:id', auth, async (req, res) => {
+  if (!req.user.isAdmin) return res.status(403).json({ message: 'Forbidden' });
+  try {
+    const { id } = req.params;
+
+    // Remove the location
+    const location = await Location.findByIdAndDelete(id);
+    if (!location) {
+      return res.status(404).json({ message: 'Location not found' });
+    }
+
+    // Unset this location from all users who have it
+    await User.updateMany({ location: id }, { $unset: { location: 1 } });
+
+    res.json({ message: 'Location deleted successfully' });
+  } catch (err) {
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
 // Admin: get all attendance for a user by employeeId
 app.get('/api/admin/user-attendance/:employeeId', auth, async (req, res) => {
   if (!req.user.isAdmin) return res.status(403).json({ message: 'Forbidden' });
@@ -404,7 +425,7 @@ app.put('/api/admin/edit-user/:employeeId', auth, upload.fields([
   }
   // Handle new profilePic and idDocs
   const folderName = `/attendence_manager/${req.params.employeeId}`;
-  if (req.files['profilePic']) {
+  if (req.files && req.files['profilePic']) {
     try {
       update.profilePic = await uploadToImageKit(
         req.files['profilePic'][0].path,
@@ -416,7 +437,7 @@ app.put('/api/admin/edit-user/:employeeId', auth, upload.fields([
       console.error('Error uploading profilePic to ImageKit (edit):', err);
     }
   }
-  if (req.files['idDocs']) {
+  if (req.files && req.files['idDocs']) {
     update.idDocs = [];
     for (const file of req.files['idDocs']) {
       try {
@@ -508,4 +529,4 @@ app.get('/', (req, res) => {
 });
 
 const PORT = process.env.PORT || 5001;
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`)); 
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
