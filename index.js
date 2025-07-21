@@ -21,23 +21,23 @@ if (!fs.existsSync(assetsDir)) {
 const imagekit = new ImageKit({
   publicKey: 'public_Go7RnwiDRbJZMJsy7ZZljlZITqo=',
   privateKey: 'private_Ps1Zl4X0Ex4XL/PHNf8qSDfsipI=',
-  urlEndpoint: process.env.IMAGEKIT_URL_ENDPOINT || 'https://ik.imagekit.io/your_imagekit_id', // Fallback
+  urlEndpoint: 'https://ik.imagekit.io/nwkqadfgr',
 });
 
 // Helper to upload a file to ImageKit
 async function uploadToImageKit(filePath, fileName, folder = '/attendence_manager') {
-  // Bypassing ImageKit upload for now to prevent crashes
-  if (!process.env.IMAGEKIT_URL_ENDPOINT) {
-    console.log(`ImageKit upload skipped for ${fileName} because URL endpoint is not configured.`);
-    return `https://via.placeholder.com/150/0000FF/808080?Text=ImageKit+Bypassed`;
+  try {
+    const fileBuffer = fs.readFileSync(filePath);
+    const result = await imagekit.upload({
+      file: fileBuffer,
+      fileName: fileName,
+      folder: folder,
+    });
+    return result.url;
+  } catch (err) {
+    console.error('Error uploading to ImageKit:', err);
+    return null;
   }
-  const fileBuffer = fs.readFileSync(filePath);
-  const result = await imagekit.upload({
-    file: fileBuffer,
-    fileName: fileName,
-    folder: folder,
-  });
-  return result.url;
 }
 
 const app = express();
@@ -231,7 +231,7 @@ app.post('/api/signup', async (req, res) => {
 });
 
 // Login API
-app.post('/api/login', async (req, res) => {
+app.post('/api/ ', async (req, res) => {
   try {
     const { employeeId, password } = req.body;
     const user = await User.findOne({ employeeId });
