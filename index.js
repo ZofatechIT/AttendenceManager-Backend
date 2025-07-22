@@ -78,7 +78,6 @@ app.post('/api/login', async (req, res) => {
   }
 });
 
-// Error handling for invalid routes
 // Place error handling middleware after all route definitions
 app.use((req, res) => {
   res.status(404).json({ message: 'Not Found' });
@@ -88,6 +87,9 @@ app.use((err, req, res, next) => {
   console.error(err.stack);
   res.status(500).json({ message: 'Something broke!' });
 });
+
+// Start the server
+// Removed duplicate PORT declaration and app.listen call at the end of the file
 
 mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/attendance', {
   useNewUrlParser: true,
