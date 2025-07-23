@@ -41,25 +41,16 @@ async function uploadToImageKit(filePath, fileName, folder = '/attendence_manage
 }
 
 const app = express();
-app.options('*', cors()); // Add this before routes
 
 // CORS setup for frontend
-const allowedOrigins = [
-  'https://attendence-manager-frontend.vercel.app',
-  'http://localhost:5173',
-];
-
 app.use(cors({
-  origin: (origin, callback) => {
-    if (!origin || allowedOrigins.includes(origin)) {
-      callback(null, true);
-    } else {
-      callback(new Error('Not allowed by CORS'));
-    }
-  },
+  origin: [
+    'https://attendence-manager-frontend.vercel.app',
+    'http://localhost:5173',
+    '*'
+  ],
   credentials: true
 }));
-
 app.use(express.json());
 
 // Basic health check endpoint
@@ -87,18 +78,16 @@ app.post('/api/login', async (req, res) => {
   }
 });
 
-// Place error handling middleware after all route definitions
+// Error handling for invalid routes
 app.use((req, res) => {
   res.status(404).json({ message: 'Not Found' });
 });
 
+// Error handling middleware
 app.use((err, req, res, next) => {
   console.error(err.stack);
   res.status(500).json({ message: 'Something broke!' });
 });
-
-// Start the server
-// Removed duplicate PORT declaration and app.listen call at the end of the file
 
 mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/attendance', {
   useNewUrlParser: true,
@@ -291,36 +280,32 @@ function auth(req, res, next) {
 }
 
 // Record attendance event
-// app.post('/api/attendance', auth, async (req, res) => {
-//   console.log(req);
-//   console.log('post');
-  
-//   const { type, time, lat, lng } = req.body;
-//   const date = new Date().toISOString().slice(0, 10);
-//   let att = await Attendance.findOne({ userId: req.user.id, date });
-//   if (!att) att = new Attendance({ userId: req.user.id, date, locations: [] });
-//   if (type === 'start') att.startTime = time;
-//   if (type === 'lunchStart') att.lunchStartTime = time;
-//   if (type === 'lunchEnd') att.lunchEndTime = time;
-//   if (type === 'end') att.endTime = time;
-//   if (lat && lng) att.locations.push({ time, lat, lng });
-//   if (type === 'end' && att.startTime && att.endTime) {
-//     let ms = new Date(att.endTime) - new Date(att.startTime);
-//     if (att.lunchStartTime && att.lunchEndTime) {
-//       ms -= new Date(att.lunchEndTime) - new Date(att.lunchStartTime);
-//     }
-//     att.totalHours = ms / (1000 * 60 * 60);
-//   }
-//   await att.save();
-//   // Update Excel file: one worksheet per user
-//   const user = await User.findById(req.user.id);
-//   await updateExcelPerUserSheet(user, att, type, lat, lng);
-//   res.json({ message: 'Attendance updated' });
-// });
+app.post('/api/attendance', auth, async (req, res) => {
+  const { type, time, lat, lng } = req.body;
+  const date = new Date().toISOString().slice(0, 10);
+  let att = await Attendance.findOne({ userId: req.user.id, date });
+  if (!att) att = new Attendance({ userId: req.user.id, date, locations: [] });
+  if (type === 'start') att.startTime = time;
+  if (type === 'lunchStart') att.lunchStartTime = time;
+  if (type === 'lunchEnd') att.lunchEndTime = time;
+  if (type === 'end') att.endTime = time;
+  if (lat && lng) att.locations.push({ time, lat, lng });
+  if (type === 'end' && att.startTime && att.endTime) {
+    let ms = new Date(att.endTime) - new Date(att.startTime);
+    if (att.lunchStartTime && att.lunchEndTime) {
+      ms -= new Date(att.lunchEndTime) - new Date(att.lunchStartTime);
+    }
+    att.totalHours = ms / (1000 * 60 * 60);
+  }
+  await att.save();
+  // Update Excel file: one worksheet per user
+  const user = await User.findById(req.user.id);
+  await updateExcelPerUserSheet(user, att, type, lat, lng);
+  res.json({ message: 'Attendance updated' });
+});
 
 // Get my attendance for today
 app.get('/api/attendance', auth, async (req, res) => {
-  
   const date = new Date().toISOString().slice(0, 10);
   const att = await Attendance.findOne({ userId: req.user.id, date });
   res.json(att);
@@ -568,4 +553,3 @@ app.put('/api/admin/attendance/record/:id', auth, async (req, res) => {
 
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
-// module.exports = app;
