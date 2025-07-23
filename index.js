@@ -560,6 +560,6 @@ app.put('/api/admin/attendance/record/:id', auth, async (req, res) => {
   }
 });
 
-// const PORT = process.env.PORT || 10000;
-// app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
-module.exports = app;
+const PORT = process.env.PORT || 10000;
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+// module.exports = app;
