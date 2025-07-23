@@ -41,16 +41,25 @@ async function uploadToImageKit(filePath, fileName, folder = '/attendence_manage
 }
 
 const app = express();
+app.options('*', cors()); // Add this before routes
 
 // CORS setup for frontend
+const allowedOrigins = [
+  'https://attendence-manager-frontend.vercel.app',
+  'http://localhost:5173',
+];
+
 app.use(cors({
-  origin: [
-    'https://attendence-manager-frontend.vercel.app',
-    'http://localhost:5173',
-    '*'
-  ],
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
   credentials: true
 }));
+
 app.use(express.json());
 
 // Basic health check endpoint
@@ -311,10 +320,7 @@ function auth(req, res, next) {
 
 // Get my attendance for today
 app.get('/api/attendance', auth, async (req, res) => {
-  console.log(req);
-  console.log('get');
   
-  console.log(res);
   const date = new Date().toISOString().slice(0, 10);
   const att = await Attendance.findOne({ userId: req.user.id, date });
   res.json(att);
