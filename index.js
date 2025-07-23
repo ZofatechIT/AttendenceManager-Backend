@@ -283,6 +283,9 @@ function auth(req, res, next) {
 
 // Record attendance event
 app.post('/api/attendance', auth, async (req, res) => {
+  console.log(req);
+  console.log('post');
+  
   const { type, time, lat, lng } = req.body;
   const date = new Date().toISOString().slice(0, 10);
   let att = await Attendance.findOne({ userId: req.user.id, date });
@@ -308,6 +311,10 @@ app.post('/api/attendance', auth, async (req, res) => {
 
 // Get my attendance for today
 app.get('/api/attendance', auth, async (req, res) => {
+  console.log(req);
+  console.log('get');
+  
+  console.log(res);
   const date = new Date().toISOString().slice(0, 10);
   const att = await Attendance.findOne({ userId: req.user.id, date });
   res.json(att);
