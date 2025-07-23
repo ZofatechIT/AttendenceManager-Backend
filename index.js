@@ -47,12 +47,18 @@ app.use(cors({
   origin: [
     'https://attendence-manager-frontend.vercel.app',
     'http://localhost:5173',
+    'http://localhost:5001',
     '*'
   ],
   credentials: true
 }));
 app.use(express.json());
 
+
+// app.use((req, res, next) => {
+//   console.log(`${req.method} ${req.originalUrl}`);
+//   next();
+// });
 // Basic health check endpoint
 app.get('/', (req, res) => {
   res.json({ status: 'Attendance Manager Backend Running' });
@@ -78,16 +84,13 @@ app.post('/api/login', async (req, res) => {
   }
 });
 
-// Error handling for invalid routes
-app.use((req, res) => {
-  res.status(404).json({ message: 'Not Found' });
-});
 
 // Error handling middleware
 app.use((err, req, res, next) => {
   console.error(err.stack);
   res.status(500).json({ message: 'Something broke!' });
 });
+
 
 mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/attendance', {
   useNewUrlParser: true,
@@ -268,14 +271,32 @@ app.post('/api/signup', async (req, res) => {
 });
 
 // Middleware to verify JWT
+// function auth(req, res, next) {
+//   const token = req.headers.authorization?.split(' ')[1];
+//   if (!token) return res.status(401).json({ message: 'No token' });
+//   try {
+//     req.user = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
+//     next();
+//   } catch {
+//     res.status(401).json({ message: 'Invalid token' });
+//   }
+// }
+//  chat gpt auth funtion
 function auth(req, res, next) {
   const token = req.headers.authorization?.split(' ')[1];
-  if (!token) return res.status(401).json({ message: 'No token' });
+  if (!token) {
+    console.log('No token provided');
+    return res.status(401).json({ message: 'No token' });
+  }
+
   try {
-    req.user = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
+    req.user = decoded;
+    console.log('JWT verified, user:', decoded);
     next();
-  } catch {
-    res.status(401).json({ message: 'Invalid token' });
+  } catch (err) {
+    console.error('JWT verification failed:', err.message);
+    return res.status(401).json({ message: 'Invalid token' });
   }
 }
 
@@ -551,5 +572,11 @@ app.put('/api/admin/attendance/record/:id', auth, async (req, res) => {
   }
 });
 
-const PORT = process.env.PORT || 10000;
+// Error handling for invalid routes
+app.use((req, res) => {
+  res.status(404).json({ message: 'Not Found' });
+});
+
+
+const PORT = process.env.PORT || 5001;  
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
