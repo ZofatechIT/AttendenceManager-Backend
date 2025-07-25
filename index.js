@@ -443,6 +443,53 @@ app.delete('/api/admin/delete-location/:id', auth, async (req, res) => {
     res.status(500).json({ message: 'Server error' });
   }
 });
+// Admin: Get all jobposts
+app.get('/api/admin/jobPost', auth, async (req, res) => {
+  if (!req.user.isAdmin) return res.status(403).json({ message: 'Forbidden' });
+  try {
+    const jobPost = await JobPost.find({});
+    res.json(locations);
+  } catch (err) {
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// Admin: Add a new Job Post
+app.post('/api/admin/add-jobPost', auth, async (req, res) => {
+  if (!req.user.isAdmin) return res.status(403).json({ message: 'Forbidden' });
+  try {
+    const { name } = req.body;
+    if (!name) return res.status(400).json({ message: 'JobPost name is required' });
+    const existing = await JobPost.findOne({ name });
+    if (existing) return res.status(400).json({ message: 'JobPost already exists' });
+    const jobPost = new JobPost({ name });
+    await location.save();
+    res.status(201).json(JobPost);
+  } catch (err) {
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// Admin: Delete a location
+app.delete('/api/admin/delete-jobPost/:id', auth, async (req, res) => {
+  if (!req.user.isAdmin) return res.status(403).json({ message: 'Forbidden' });
+  try {
+    const { id } = req.params;
+
+    // Remove the location
+    const jobPost = await JobPost.findByIdAndDelete(id);
+    if (!location) {
+      return res.status(404).json({ message: 'Location not found' });
+    }
+
+    // Unset this location from all users who have it
+    await User.updateMany({ jobPost: id }, { $unset: { jobPost: 1 } });
+
+    res.json({ message: 'Location deleted successfully' });
+  } catch (err) {
+    res.status(500).json({ message: 'Server error' });
+  }
+});
 
 // Admin: get all attendance for a user by employeeId
 app.get('/api/admin/user-attendance/:employeeId', auth, async (req, res) => {
