@@ -134,7 +134,13 @@ const User = mongoose.model('User', userSchema);
 const locationSchema = new mongoose.Schema({
   name: { type: String, required: true, unique: true },
 });
-const Location = mongoose.model('Location', locationSchema);
+const Location= mongoose.model('Location', locationSchema);
+
+
+const jobPostSchema = new mongoose.Schema({
+  name: { type: String, required: true, unique: true },
+});
+const JobPost = mongoose.model('JobPost', jobPostSchema);
 
 const attendanceSchema = new mongoose.Schema({
   userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
@@ -466,9 +472,10 @@ app.post('/api/admin/add-jobPost', auth, async (req, res) => {
     if (existing) return res.status(400).json({ message: 'JobPost already exists' });
 
     const jobPost = new JobPost({ name });
-    await jobPost.save();
+    await jobPost.save(); // 🔥 Error likely occurs here
     res.status(201).json(jobPost);
   } catch (err) {
+    console.error("Error adding job post:", err); // 👈 Add this
     res.status(500).json({ message: 'Server error' });
   }
 });
