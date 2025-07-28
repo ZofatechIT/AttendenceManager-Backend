@@ -443,13 +443,14 @@ app.delete('/api/admin/delete-location/:id', auth, async (req, res) => {
     res.status(500).json({ message: 'Server error' });
   }
 });
-// Admin: Get all jobposts
+// Admin: Get all job posts
 app.get('/api/admin/jobPost', auth, async (req, res) => {
   if (!req.user.isAdmin) return res.status(403).json({ message: 'Forbidden' });
   try {
-    const jobPost = await JobPost.find({});
-    res.json(locations);
+    const jobPosts = await JobPost.find({});
+    res.json(jobPosts);
   } catch (err) {
+     console.error('Error fetching job posts:', err);
     res.status(500).json({ message: 'Server error' });
   }
 });
@@ -460,36 +461,37 @@ app.post('/api/admin/add-jobPost', auth, async (req, res) => {
   try {
     const { name } = req.body;
     if (!name) return res.status(400).json({ message: 'JobPost name is required' });
+
     const existing = await JobPost.findOne({ name });
     if (existing) return res.status(400).json({ message: 'JobPost already exists' });
+
     const jobPost = new JobPost({ name });
-    await location.save();
-    res.status(201).json(JobPost);
+    await jobPost.save();
+    res.status(201).json(jobPost);
   } catch (err) {
     res.status(500).json({ message: 'Server error' });
   }
 });
 
-// Admin: Delete a location
+// Admin: Delete a Job Post
 app.delete('/api/admin/delete-jobPost/:id', auth, async (req, res) => {
   if (!req.user.isAdmin) return res.status(403).json({ message: 'Forbidden' });
   try {
     const { id } = req.params;
 
-    // Remove the location
     const jobPost = await JobPost.findByIdAndDelete(id);
-    if (!location) {
-      return res.status(404).json({ message: 'Location not found' });
+    if (!jobPost) {
+      return res.status(404).json({ message: 'JobPost not found' });
     }
 
-    // Unset this location from all users who have it
     await User.updateMany({ jobPost: id }, { $unset: { jobPost: 1 } });
 
-    res.json({ message: 'Location deleted successfully' });
+    res.json({ message: 'JobPost deleted successfully' }); 
   } catch (err) {
     res.status(500).json({ message: 'Server error' });
   }
 });
+
 
 // Admin: get all attendance for a user by employeeId
 app.get('/api/admin/user-attendance/:employeeId', auth, async (req, res) => {
