@@ -102,8 +102,8 @@ mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/attendanc
 });
 
 // Set up multer for file uploads
-const uploadDir = path.join(process.cwd(), '..', 'uploads');
-if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir);
+const uploadDir = path.join(process.cwd(), 'uploads');
+if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, uploadDir),
   filename: (req, file, cb) => {
@@ -643,29 +643,53 @@ app.put('/api/admin/attendance/record/:id', auth, async (req, res) => {
 // User: Submit a report
 app.post('/api/reports', auth, upload.array('pictures', 5), async (req, res) => {
   try {
+    console.log('Report submission request received:', {
+      body: req.body,
+      files: req.files ? req.files.length : 0,
+      user: req.user.employeeId
+    });
+
     const { type, date, time, message, location } = req.body;
     
     if (!type || !date || !time || !message) {
+      console.log('Missing required fields:', { type, date, time, message });
       return res.status(400).json({ message: 'Type, date, time, and message are required' });
     }
 
     // Upload pictures to ImageKit if any
     const pictureUrls = [];
     if (req.files && req.files.length > 0) {
+      console.log(`Processing ${req.files.length} uploaded files`);
       const folderName = `/attendence_manager/reports/${req.user.employeeId}`;
       for (const file of req.files) {
         try {
+          console.log('Uploading file:', file.originalname);
           const url = await uploadToImageKit(
             file.path,
             file.originalname,
             folderName
           );
-          pictureUrls.push(url);
+          if (url) {
+            pictureUrls.push(url);
+            console.log('File uploaded successfully:', url);
+          } else {
+            console.log('File upload failed for:', file.originalname);
+          }
         } catch (err) {
           console.error('Error uploading picture to ImageKit:', err);
         }
       }
     }
+
+    console.log('Creating report with data:', {
+      userId: req.user._id,
+      type,
+      date,
+      time,
+      message: message.substring(0, 50) + '...',
+      location,
+      picturesCount: pictureUrls.length
+    });
 
     const report = new Report({
       userId: req.user._id,
@@ -678,10 +702,12 @@ app.post('/api/reports', auth, upload.array('pictures', 5), async (req, res) => 
     });
 
     await report.save();
+    console.log('Report saved successfully with ID:', report._id);
     res.status(201).json({ message: 'Report submitted successfully', report });
   } catch (err) {
     console.error('Error submitting report:', err);
-    res.status(500).json({ message: 'Server error' });
+    console.error('Error stack:', err.stack);
+    res.status(500).json({ message: 'Server error', error: err.message });
   }
 });
 
