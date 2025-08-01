@@ -154,6 +154,18 @@ const attendanceSchema = new mongoose.Schema({
 });
 const Attendance = mongoose.model('Attendance', attendanceSchema);
 
+const reportSchema = new mongoose.Schema({
+  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  type: { type: String, enum: ['all_ok', 'problem'], required: true },
+  date: { type: String, required: true }, // YYYY-MM-DD
+  time: { type: String, required: true }, // HH:MM
+  message: { type: String, required: true },
+  location: { type: String },
+  pictures: [String], // Array of ImageKit URLs
+  createdAt: { type: Date, default: Date.now },
+});
+const Report = mongoose.model('Report', reportSchema);
+
 // Helper to format time as 'h:mm:ss AM/PM'
 function formatTime(t) {
   if (!t) return '';
@@ -624,6 +636,122 @@ app.put('/api/admin/attendance/record/:id', auth, async (req, res) => {
     res.json({ message: 'Record updated', record });
   } catch (err) {
     console.error('Error updating attendance record:', err);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// User: Submit a report
+app.post('/api/reports', auth, upload.array('pictures', 5), async (req, res) => {
+  try {
+    const { type, date, time, message, location } = req.body;
+    
+    if (!type || !date || !time || !message) {
+      return res.status(400).json({ message: 'Type, date, time, and message are required' });
+    }
+
+    // Upload pictures to ImageKit if any
+    const pictureUrls = [];
+    if (req.files && req.files.length > 0) {
+      const folderName = `/attendence_manager/reports/${req.user.employeeId}`;
+      for (const file of req.files) {
+        try {
+          const url = await uploadToImageKit(
+            file.path,
+            file.originalname,
+            folderName
+          );
+          pictureUrls.push(url);
+        } catch (err) {
+          console.error('Error uploading picture to ImageKit:', err);
+        }
+      }
+    }
+
+    const report = new Report({
+      userId: req.user._id,
+      type,
+      date,
+      time,
+      message,
+      location,
+      pictures: pictureUrls,
+    });
+
+    await report.save();
+    res.status(201).json({ message: 'Report submitted successfully', report });
+  } catch (err) {
+    console.error('Error submitting report:', err);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// Admin: Get all reports with filters
+app.get('/api/admin/reports', auth, async (req, res) => {
+  if (!req.user.isAdmin) return res.status(403).json({ message: 'Forbidden' });
+  try {
+    const { 
+      startDate, 
+      endDate, 
+      type, 
+      userId,
+      page = 1,
+      limit = 20
+    } = req.query;
+
+    const filter = {};
+    
+    // Date range filter
+    if (startDate && endDate) {
+      filter.date = { $gte: startDate, $lte: endDate };
+    } else if (startDate) {
+      filter.date = { $gte: startDate };
+    } else if (endDate) {
+      filter.date = { $lte: endDate };
+    }
+
+    // Type filter
+    if (type && type !== 'all') {
+      filter.type = type;
+    }
+
+    // User filter
+    if (userId) {
+      const user = await User.findOne({ employeeId: userId });
+      if (user) {
+        filter.userId = user._id;
+      }
+    }
+
+    const skip = (page - 1) * limit;
+    
+    const reports = await Report.find(filter)
+      .populate('userId', 'employeeId name')
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(parseInt(limit));
+
+    const total = await Report.countDocuments(filter);
+
+    res.json({
+      reports,
+      total,
+      page: parseInt(page),
+      totalPages: Math.ceil(total / limit)
+    });
+  } catch (err) {
+    console.error('Error fetching reports:', err);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// Admin: Get report count for notification
+app.get('/api/admin/reports/count', auth, async (req, res) => {
+  if (!req.user.isAdmin) return res.status(403).json({ message: 'Forbidden' });
+  try {
+    const problemCount = await Report.countDocuments({ type: 'problem' });
+    res.json({ problemCount });
+  } catch (err) {
+    console.error('Error fetching report count:', err);
     res.status(500).json({ message: 'Server error' });
   }
 });
