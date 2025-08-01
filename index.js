@@ -682,7 +682,7 @@ app.post('/api/reports', auth, upload.array('pictures', 5), async (req, res) => 
     }
 
     console.log('Creating report with data:', {
-      userId: req.user._id,
+      userId: req.user.id,
       type,
       date,
       time,
@@ -692,7 +692,7 @@ app.post('/api/reports', auth, upload.array('pictures', 5), async (req, res) => 
     });
 
     const report = new Report({
-      userId: req.user._id,
+      userId: req.user.id,
       type,
       date,
       time,
