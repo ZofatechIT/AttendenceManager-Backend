@@ -782,6 +782,100 @@ app.get('/api/admin/reports/count', auth, async (req, res) => {
   }
 });
 
+// Live Data Endpoints
+// Get live guard statuses and statistics
+app.get('/api/live/status', auth, async (req, res) => {
+  try {
+    const today = new Date().toISOString().slice(0, 10);
+    
+    // Get all users (guards)
+    const users = await User.find({}).populate('location');
+    
+    // Get today's attendance records
+    const todayAttendance = await Attendance.find({ date: today });
+    
+    // Get today's reports
+    const todayReports = await Report.find({ date: today });
+    
+    // Calculate live statistics
+    const activeGuards = todayAttendance.filter(att => 
+      att.checkIn && !att.checkOut && !att.lunchStart
+    ).length;
+    
+    const totalPosts = await Location.countDocuments();
+    const incidentsToday = todayReports.filter(report => report.type === 'incident').length;
+    const checkInsToday = todayAttendance.filter(att => att.checkIn).length;
+    
+    // Get guard statuses with real data
+    const guardStatuses = users.map(user => {
+      const userAttendance = todayAttendance.find(att => att.userId.toString() === user._id.toString());
+      
+      let status = 'offline';
+      let lastSeen = null;
+      
+      if (userAttendance) {
+        if (userAttendance.checkIn && !userAttendance.checkOut) {
+          if (userAttendance.lunchStart && !userAttendance.lunchEnd) {
+            status = 'break';
+          } else {
+            status = 'active';
+          }
+          lastSeen = userAttendance.checkIn;
+        } else if (userAttendance.checkOut) {
+          lastSeen = userAttendance.checkOut;
+        }
+      }
+      
+      return {
+        id: user._id,
+        name: user.name,
+        post: user.location?.name || 'Unassigned',
+        status,
+        lastSeen,
+        employeeId: user.employeeId
+      };
+    });
+    
+    res.json({
+      liveData: {
+        activeGuards,
+        totalPosts,
+        incidentsToday,
+        checkInsToday,
+        lastUpdate: new Date()
+      },
+      guardStatuses,
+      recentCheckIns: todayAttendance
+        .filter(att => att.checkIn)
+        .slice(0, 10)
+        .map(att => ({
+          guardName: users.find(u => u._id.toString() === att.userId.toString())?.name || 'Unknown',
+          postName: users.find(u => u._id.toString() === att.userId.toString())?.location?.name || 'Unknown',
+          timestamp: att.checkIn,
+          timeAgo: formatTimeAgo(new Date(att.checkIn))
+        }))
+    });
+    
+  } catch (err) {
+    console.error('Error fetching live status:', err);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// Helper function to format time ago
+function formatTimeAgo(date) {
+  const now = new Date();
+  const diffMs = now - date;
+  const diffMinutes = Math.floor(diffMs / (1000 * 60));
+  
+  if (diffMinutes < 1) return 'Just now';
+  if (diffMinutes < 60) return `${diffMinutes} min ago`;
+  const diffHours = Math.floor(diffMinutes / 60);
+  if (diffHours < 24) return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;
+  const diffDays = Math.floor(diffHours / 24);
+  return `${diffDays} day${diffDays > 1 ? 's' : ''} ago`;
+}
+
 // Error handling for invalid routes
 app.use((req, res) => {
   res.status(404).json({ message: 'Not Found' });
