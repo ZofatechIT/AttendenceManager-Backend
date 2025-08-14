@@ -367,13 +367,53 @@ app.post('/api/attendance', auth, async (req, res) => {
   if (type === 'lunch_end') att.lunchEndTime = time;
   if (type === 'end') att.endTime = time;
   if (lat && lng) att.locations.push({ time, lat, lng });
+  
+  // Calculate total hours with proper validation
   if (type === 'end' && att.startTime && att.endTime) {
-    let ms = new Date(att.endTime) - new Date(att.startTime);
-    if (att.lunchStartTime && att.lunchEndTime) {
-      ms -= new Date(att.lunchEndTime) - new Date(att.lunchStartTime);
+    try {
+      // Validate and parse dates
+      const startDate = new Date(att.startTime);
+      const endDate = new Date(att.endTime);
+      
+      // Check if dates are valid
+      if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
+        console.error('Invalid date values:', { startTime: att.startTime, endTime: att.endTime });
+        att.totalHours = 0;
+      } else {
+        let ms = endDate.getTime() - startDate.getTime();
+        
+        // Validate lunch times if they exist
+        if (att.lunchStartTime && att.lunchEndTime) {
+          const lunchStartDate = new Date(att.lunchStartTime);
+          const lunchEndDate = new Date(att.lunchEndTime);
+          
+          if (!isNaN(lunchStartDate.getTime()) && !isNaN(lunchEndDate.getTime())) {
+            const lunchMs = lunchEndDate.getTime() - lunchStartDate.getTime();
+            ms -= lunchMs;
+          } else {
+            console.error('Invalid lunch time values:', { 
+              lunchStartTime: att.lunchStartTime, 
+              lunchEndTime: att.lunchEndTime 
+            });
+          }
+        }
+        
+        // Ensure we don't get negative hours
+        if (ms < 0) {
+          console.error('Negative time difference calculated:', { ms, startTime: att.startTime, endTime: att.endTime });
+          att.totalHours = 0;
+        } else {
+          att.totalHours = ms / (1000 * 60 * 60);
+          // Round to 2 decimal places
+          att.totalHours = Math.round(att.totalHours * 100) / 100;
+        }
+      }
+    } catch (error) {
+      console.error('Error calculating total hours:', error);
+      att.totalHours = 0;
     }
-    att.totalHours = ms / (1000 * 60 * 60);
   }
+  
   await att.save();
   // Update Excel file: one worksheet per user
   const user = await User.findById(req.user.id);
@@ -693,13 +733,57 @@ app.put('/api/admin/attendance/record/:id', auth, async (req, res) => {
     record.lunchEndTime = lunchEndTime || null;
     record.endTime = endTime || null;
 
-    // Recalculate total hours
+    // Recalculate total hours with proper validation
     if (record.startTime && record.endTime) {
-      let ms = new Date(record.endTime) - new Date(record.startTime);
-      if (record.lunchStartTime && record.lunchEndTime) {
-        ms -= new Date(record.lunchEndTime) - new Date(record.lunchStartTime);
+      try {
+        // Validate and parse dates
+        const startDate = new Date(record.startTime);
+        const endDate = new Date(record.endTime);
+        
+        // Check if dates are valid
+        if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
+          console.error('Invalid date values in admin update:', { 
+            startTime: record.startTime, 
+            endTime: record.endTime 
+          });
+          record.totalHours = 0;
+        } else {
+          let ms = endDate.getTime() - startDate.getTime();
+          
+          // Validate lunch times if they exist
+          if (record.lunchStartTime && record.lunchEndTime) {
+            const lunchStartDate = new Date(record.lunchStartTime);
+            const lunchEndDate = new Date(record.lunchEndTime);
+            
+            if (!isNaN(lunchStartDate.getTime()) && !isNaN(lunchEndDate.getTime())) {
+              const lunchMs = lunchEndDate.getTime() - lunchStartDate.getTime();
+              ms -= lunchMs;
+            } else {
+              console.error('Invalid lunch time values in admin update:', { 
+                lunchStartTime: record.lunchStartTime, 
+                lunchEndTime: record.lunchEndTime 
+              });
+            }
+          }
+          
+          // Ensure we don't get negative hours
+          if (ms < 0) {
+            console.error('Negative time difference calculated in admin update:', { 
+              ms, 
+              startTime: record.startTime, 
+              endTime: record.endTime 
+            });
+            record.totalHours = 0;
+          } else {
+            record.totalHours = ms / (1000 * 60 * 60);
+            // Round to 2 decimal places
+            record.totalHours = Math.round(record.totalHours * 100) / 100;
+          }
+        }
+      } catch (error) {
+        console.error('Error calculating total hours in admin update:', error);
+        record.totalHours = 0;
       }
-      record.totalHours = ms / (1000 * 60 * 60);
     } else {
       record.totalHours = 0;
     }
@@ -712,6 +796,100 @@ app.put('/api/admin/attendance/record/:id', auth, async (req, res) => {
     res.json({ message: 'Record updated', record });
   } catch (err) {
     console.error('Error updating attendance record:', err);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// Admin: Clean up invalid attendance records (fix negative hours)
+app.post('/api/admin/attendance/cleanup', auth, async (req, res) => {
+  if (!req.user.isAdmin) return res.status(403).json({ message: 'Forbidden' });
+  try {
+    // Find all attendance records with invalid total hours
+    const invalidRecords = await Attendance.find({
+      $or: [
+        { totalHours: { $lt: 0 } },           // Negative hours
+        { totalHours: { $gt: 1000 } },        // Unrealistic high hours
+        { totalHours: { $type: 'string' } },  // String values
+        { totalHours: null }                  // Null values
+      ]
+    });
+
+    let fixedCount = 0;
+    let errors = [];
+
+    for (const record of invalidRecords) {
+      try {
+        // Recalculate total hours with validation
+        if (record.startTime && record.endTime) {
+          const startDate = new Date(record.startTime);
+          const endDate = new Date(record.endTime);
+          
+          if (!isNaN(startDate.getTime()) && !isNaN(endDate.getTime())) {
+            let ms = endDate.getTime() - startDate.getTime();
+            
+            if (record.lunchStartTime && record.lunchEndTime) {
+              const lunchStartDate = new Date(record.lunchStartTime);
+              const lunchEndDate = new Date(record.lunchEndTime);
+              
+              if (!isNaN(lunchStartDate.getTime()) && !isNaN(lunchEndDate.getTime())) {
+                const lunchMs = lunchEndDate.getTime() - lunchStartDate.getTime();
+                ms -= lunchMs;
+              }
+            }
+            
+            if (ms >= 0) {
+              record.totalHours = Math.round((ms / (1000 * 60 * 60)) * 100) / 100;
+            } else {
+              record.totalHours = 0;
+            }
+          } else {
+            record.totalHours = 0;
+          }
+        } else {
+          record.totalHours = 0;
+        }
+        
+        await record.save();
+        fixedCount++;
+      } catch (error) {
+        errors.push(`Record ${record._id}: ${error.message}`);
+      }
+    }
+
+    res.json({ 
+      message: `Cleanup completed. Fixed ${fixedCount} records.`,
+      fixedCount,
+      totalInvalid: invalidRecords.length,
+      errors: errors.length > 0 ? errors : undefined
+    });
+  } catch (err) {
+    console.error('Error during attendance cleanup:', err);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// Admin: Get attendance cleanup status (check how many invalid records exist)
+app.get('/api/admin/attendance/cleanup-status', auth, async (req, res) => {
+  if (!req.user.isAdmin) return res.status(403).json({ message: 'Forbidden' });
+  try {
+    const invalidCount = await Attendance.countDocuments({
+      $or: [
+        { totalHours: { $lt: 0 } },
+        { totalHours: { $gt: 1000 } },
+        { totalHours: { $type: 'string' } },
+        { totalHours: null }
+      ]
+    });
+
+    const totalRecords = await Attendance.countDocuments();
+    
+    res.json({ 
+      invalidRecords: invalidCount,
+      totalRecords,
+      needsCleanup: invalidCount > 0
+    });
+  } catch (err) {
+    console.error('Error checking cleanup status:', err);
     res.status(500).json({ message: 'Server error' });
   }
 });
@@ -873,16 +1051,16 @@ app.get('/api/live/status', auth, async (req, res) => {
     // Get today's reports
     const todayReports = await Report.find({ date: today });
     
-    // Calculate live statistics
+    // Calculate live statistics using correct field names
     const activeGuards = todayAttendance.filter(att => 
-      att.checkIn && !att.checkOut && !att.lunchStart
+      att.startTime && !att.endTime && !att.lunchStartTime
     ).length;
     
     const totalPosts = await Location.countDocuments();
-    const incidentsToday = todayReports.filter(report => report.type === 'incident').length;
-    const checkInsToday = todayAttendance.filter(att => att.checkIn).length;
+    const incidentsToday = todayReports.filter(report => report.type === 'problem').length;
+    const checkInsToday = todayAttendance.filter(att => att.startTime).length;
     
-    // Get guard statuses with real data
+    // Get guard statuses with real data using correct field names
     const guardStatuses = users.map(user => {
       const userAttendance = todayAttendance.find(att => att.userId.toString() === user._id.toString());
       
@@ -890,15 +1068,21 @@ app.get('/api/live/status', auth, async (req, res) => {
       let lastSeen = null;
       
       if (userAttendance) {
-        if (userAttendance.checkIn && !userAttendance.checkOut) {
-          if (userAttendance.lunchStart && !userAttendance.lunchEnd) {
+        if (userAttendance.startTime && !userAttendance.endTime) {
+          // Work started but not ended
+          if (userAttendance.lunchStartTime && !userAttendance.lunchEndTime) {
             status = 'break';
+            lastSeen = userAttendance.lunchStartTime;
           } else {
             status = 'active';
+            lastSeen = userAttendance.startTime;
           }
-          lastSeen = userAttendance.checkIn;
-        } else if (userAttendance.checkOut) {
-          lastSeen = userAttendance.checkOut;
+        } else if (userAttendance.endTime) {
+          // Work ended
+          lastSeen = userAttendance.endTime;
+        } else if (userAttendance.startTime) {
+          // Only start time recorded
+          lastSeen = userAttendance.startTime;
         }
       }
       
@@ -912,6 +1096,37 @@ app.get('/api/live/status', auth, async (req, res) => {
       };
     });
     
+    // Get recent activity using correct field names
+    const recentActivity = todayAttendance
+      .filter(att => att.startTime || att.lunchStartTime || att.lunchEndTime || att.endTime)
+      .slice(0, 10)
+      .map(att => {
+        const user = users.find(u => u._id.toString() === att.userId.toString());
+        let type = 'checkin';
+        let time = att.startTime;
+        
+        if (att.lunchStartTime && !att.lunchEndTime) {
+          type = 'lunch_start';
+          time = att.lunchStartTime;
+        } else if (att.lunchEndTime) {
+          type = 'lunch_end';
+          time = att.lunchEndTime;
+        } else if (att.endTime) {
+          type = 'checkout';
+          time = att.endTime;
+        }
+        
+        return {
+          id: att._id,
+          guard: user?.name || 'Unknown',
+          post: user?.location?.name || 'Unknown',
+          type,
+          time,
+          timeAgo: formatTimeAgo(new Date(time))
+        };
+      })
+      .sort((a, b) => new Date(b.time) - new Date(a.time));
+    
     res.json({
       liveData: {
         activeGuards,
@@ -921,15 +1136,7 @@ app.get('/api/live/status', auth, async (req, res) => {
         lastUpdate: new Date()
       },
       guardStatuses,
-      recentCheckIns: todayAttendance
-        .filter(att => att.checkIn)
-        .slice(0, 10)
-        .map(att => ({
-          guardName: users.find(u => u._id.toString() === att.userId.toString())?.name || 'Unknown',
-          postName: users.find(u => u._id.toString() === att.userId.toString())?.location?.name || 'Unknown',
-          timestamp: att.checkIn,
-          timeAgo: formatTimeAgo(new Date(att.checkIn))
-        }))
+      recentActivity
     });
     
   } catch (err) {
