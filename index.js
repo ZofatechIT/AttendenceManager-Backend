@@ -1048,6 +1048,16 @@ app.get('/api/live/status', auth, async (req, res) => {
     // Get today's attendance records
     const todayAttendance = await Attendance.find({ date: today });
     
+    // Debug: Log all attendance records for today
+    console.log('🔍 Debug: Today\'s attendance records:', todayAttendance.map(att => ({
+      userId: att.userId,
+      startTime: att.startTime,
+      endTime: att.endTime,
+      lunchStartTime: att.lunchStartTime,
+      lunchEndTime: att.lunchEndTime,
+      date: att.date
+    })));
+    
     // Get today's reports
     const todayReports = await Report.find({ date: today });
     
@@ -1079,11 +1089,28 @@ app.get('/api/live/status', auth, async (req, res) => {
           }
         } else if (userAttendance.endTime) {
           // Work ended
+          status = 'offline';
           lastSeen = userAttendance.endTime;
         } else if (userAttendance.startTime) {
-          // Only start time recorded
+          // Only start time recorded (should be active)
+          status = 'active';
           lastSeen = userAttendance.startTime;
         }
+      }
+      
+      // Debug logging for specific user
+      if (user.name === 'Test User2') {
+        console.log('🔍 Debug Test User2 status:', {
+          userId: user._id,
+          userAttendance: userAttendance ? {
+            startTime: userAttendance.startTime,
+            endTime: userAttendance.endTime,
+            lunchStartTime: userAttendance.lunchStartTime,
+            lunchEndTime: userAttendance.lunchEndTime
+          } : null,
+          calculatedStatus: status,
+          lastSeen
+        });
       }
       
       return {
