@@ -900,7 +900,8 @@ app.post('/api/reports', auth, upload.array('pictures', 5), async (req, res) => 
     console.log('Report submission request received:', {
       body: req.body,
       files: req.files ? req.files.length : 0,
-      user: req.user.employeeId
+      user: req.user,
+      userId: req.user.id
     });
 
     const { type, date, time, message, location } = req.body;
@@ -910,11 +911,17 @@ app.post('/api/reports', auth, upload.array('pictures', 5), async (req, res) => 
       return res.status(400).json({ message: 'Type, date, time, and message are required' });
     }
 
+    // Validate user ID
+    if (!req.user.id) {
+      console.error('No user ID found in request:', req.user);
+      return res.status(400).json({ message: 'Invalid user token' });
+    }
+
     // Upload pictures to ImageKit if any
     const pictureUrls = [];
     if (req.files && req.files.length > 0) {
       console.log(`Processing ${req.files.length} uploaded files`);
-      const folderName = `/attendence_manager/reports/${req.user.employeeId}`;
+      const folderName = `/attendence_manager/reports/${req.user.id}`;
       for (const file of req.files) {
         try {
           console.log('Uploading file:', file.originalname);
@@ -961,6 +968,8 @@ app.post('/api/reports', auth, upload.array('pictures', 5), async (req, res) => 
   } catch (err) {
     console.error('Error submitting report:', err);
     console.error('Error stack:', err.stack);
+    console.error('Request body:', req.body);
+    console.error('User object:', req.user);
     res.status(500).json({ message: 'Server error', error: err.message });
   }
 });
@@ -1063,7 +1072,7 @@ app.get('/api/live/status', auth, async (req, res) => {
     
     // Calculate live statistics using correct field names
     const activeGuards = todayAttendance.filter(att => 
-      att.startTime && !att.endTime && !att.lunchStartTime
+      att.startTime && !att.endTime
     ).length;
     
     const totalPosts = await Location.countDocuments();
@@ -1122,6 +1131,14 @@ app.get('/api/live/status', auth, async (req, res) => {
         employeeId: user.employeeId
       };
     });
+    
+    // Debug: Log all guard statuses
+    console.log('🔍 Debug: All guard statuses:', guardStatuses.map(guard => ({
+      name: guard.name,
+      status: guard.status,
+      lastSeen: guard.lastSeen,
+      post: guard.post
+    })));
     
     // Get recent activity using correct field names
     const recentActivity = todayAttendance
