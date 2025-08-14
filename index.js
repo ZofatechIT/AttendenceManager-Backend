@@ -75,12 +75,50 @@ app.post('/api/login', async (req, res) => {
     if (!user) return res.status(400).json({ message: 'Invalid credentials' });
     const valid = await bcrypt.compare(password, user.password);
     if (!valid) return res.status(400).json({ message: 'Invalid credentials' });
-    const token = jwt.sign({ id: user._id, isAdmin: user.isAdmin }, process.env.JWT_SECRET || 'your-secret-key', { expiresIn: '1d' });
+    
+    // Generate access token (short-lived) and refresh token (long-lived)
+    const accessToken = jwt.sign({ id: user._id, isAdmin: user.isAdmin }, process.env.JWT_SECRET || 'your-secret-key', { expiresIn: '1h' });
+    const refreshToken = jwt.sign({ id: user._id }, process.env.JWT_SECRET || 'your-secret-key', { expiresIn: '30d' });
+    
     const userWithLocation = await User.findById(user._id).populate('location');
-    res.json({ token, user: userWithLocation });
+    res.json({ 
+      token: accessToken, 
+      refreshToken: refreshToken,
+      user: userWithLocation 
+    });
   } catch (err) {
     console.error('Login error:', err);
     res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// Token refresh API
+app.post('/api/auth/refresh', async (req, res) => {
+  try {
+    const { refreshToken } = req.body;
+    if (!refreshToken) {
+      return res.status(400).json({ message: 'Refresh token is required' });
+    }
+    
+    // Verify refresh token
+    const decoded = jwt.verify(refreshToken, process.env.JWT_SECRET || 'your-secret-key');
+    const user = await User.findById(decoded.id);
+    
+    if (!user) {
+      return res.status(401).json({ message: 'Invalid refresh token' });
+    }
+    
+    // Generate new access token
+    const newAccessToken = jwt.sign({ id: user._id, isAdmin: user.isAdmin }, process.env.JWT_SECRET || 'your-secret-key', { expiresIn: '1h' });
+    const newRefreshToken = jwt.sign({ id: user._id }, process.env.JWT_SECRET || 'your-secret-key', { expiresIn: '30d' });
+    
+    res.json({ 
+      token: newAccessToken, 
+      refreshToken: newRefreshToken 
+    });
+  } catch (err) {
+    console.error('Token refresh error:', err);
+    res.status(401).json({ message: 'Invalid refresh token' });
   }
 });
 
@@ -325,8 +363,8 @@ app.post('/api/attendance', auth, async (req, res) => {
   let att = await Attendance.findOne({ userId: req.user.id, date });
   if (!att) att = new Attendance({ userId: req.user.id, date, locations: [] });
   if (type === 'start') att.startTime = time;
-  if (type === 'lunchStart') att.lunchStartTime = time;
-  if (type === 'lunchEnd') att.lunchEndTime = time;
+  if (type === 'lunch_start') att.lunchStartTime = time;
+  if (type === 'lunch_end') att.lunchEndTime = time;
   if (type === 'end') att.endTime = time;
   if (lat && lng) att.locations.push({ time, lat, lng });
   if (type === 'end' && att.startTime && att.endTime) {
@@ -348,6 +386,44 @@ app.get('/api/attendance', auth, async (req, res) => {
   const date = new Date().toISOString().slice(0, 10);
   const att = await Attendance.findOne({ userId: req.user.id, date });
   res.json(att);
+});
+
+// Get current attendance status for session restoration
+app.get('/api/attendance/status', auth, async (req, res) => {
+  try {
+    const date = new Date().toISOString().slice(0, 10);
+    const att = await Attendance.findOne({ userId: req.user.id, date });
+    
+    if (!att) {
+      return res.json({ currentSession: null });
+    }
+    
+    // Determine current session status
+    let currentSession = null;
+    
+    if (att.startTime && !att.endTime) {
+      // Work started but not ended
+      if (att.lunchStartTime && !att.lunchEndTime) {
+        // Currently on lunch break
+        currentSession = {
+          type: 'lunch_start',
+          time: att.lunchStartTime,
+          startTime: att.startTime
+        };
+      } else {
+        // Currently working
+        currentSession = {
+          type: 'start',
+          time: att.startTime
+        };
+      }
+    }
+    
+    res.json({ currentSession });
+  } catch (err) {
+    console.error('Error getting attendance status:', err);
+    res.status(500).json({ message: 'Server error' });
+  }
 });
 
 // Admin: get all users' progress
