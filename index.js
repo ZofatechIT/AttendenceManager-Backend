@@ -194,7 +194,11 @@ const Attendance = mongoose.model('Attendance', attendanceSchema);
 
 const reportSchema = new mongoose.Schema({
   userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-  type: { type: String, enum: ['all_ok', 'problem'], required: true },
+  type: { 
+    type: String, 
+    enum: ['all_ok', 'problem', 'security', 'maintenance', 'suspicious', 'equipment', 'other'], 
+    required: true 
+  },
   date: { type: String, required: true }, // YYYY-MM-DD
   time: { type: String, required: true }, // HH:MM
   message: { type: String, required: true },
@@ -894,37 +898,58 @@ app.get('/api/admin/attendance/cleanup-status', auth, async (req, res) => {
   }
 });
 
+// Test endpoint to verify backend is working
+app.get('/api/test', (req, res) => {
+  res.json({ 
+    message: 'Backend is working!', 
+    timestamp: new Date().toISOString(),
+    models: {
+      Report: !!Report,
+      User: !!User,
+      Attendance: !!Attendance
+    }
+  });
+});
+
 // User: Submit a report
 app.post('/api/reports', auth, upload.array('pictures', 5), async (req, res) => {
   try {
-    console.log('Report submission request received:', {
+    console.log('🔍 Report submission request received:', {
+      method: req.method,
+      url: req.url,
+      headers: req.headers,
       body: req.body,
       files: req.files ? req.files.length : 0,
       user: req.user,
-      userId: req.user.id
+      userId: req.user.id,
+      contentType: req.headers['content-type']
     });
 
     const { type, date, time, message, location } = req.body;
     
+    console.log('🔍 Parsed form data:', { type, date, time, message, location });
+    
     if (!type || !date || !time || !message) {
-      console.log('Missing required fields:', { type, date, time, message });
+      console.log('❌ Missing required fields:', { type, date, time, message });
       return res.status(400).json({ message: 'Type, date, time, and message are required' });
     }
 
     // Validate user ID
     if (!req.user.id) {
-      console.error('No user ID found in request:', req.user);
+      console.error('❌ No user ID found in request:', req.user);
       return res.status(400).json({ message: 'Invalid user token' });
     }
+
+    console.log('✅ User validation passed, proceeding with report creation...');
 
     // Upload pictures to ImageKit if any
     const pictureUrls = [];
     if (req.files && req.files.length > 0) {
-      console.log(`Processing ${req.files.length} uploaded files`);
+      console.log(`📸 Processing ${req.files.length} uploaded files`);
       const folderName = `/attendence_manager/reports/${req.user.id}`;
       for (const file of req.files) {
         try {
-          console.log('Uploading file:', file.originalname);
+          console.log('📁 Uploading file:', file.originalname, 'Size:', file.size);
           const url = await uploadToImageKit(
             file.path,
             file.originalname,
@@ -932,17 +957,19 @@ app.post('/api/reports', auth, upload.array('pictures', 5), async (req, res) => 
           );
           if (url) {
             pictureUrls.push(url);
-            console.log('File uploaded successfully:', url);
+            console.log('✅ File uploaded successfully:', url);
           } else {
-            console.log('File upload failed for:', file.originalname);
+            console.log('❌ File upload failed for:', file.originalname);
           }
         } catch (err) {
-          console.error('Error uploading picture to ImageKit:', err);
+          console.error('❌ Error uploading picture to ImageKit:', err);
         }
       }
+    } else {
+      console.log('📸 No files to upload');
     }
 
-    console.log('Creating report with data:', {
+    console.log('📝 Creating report with data:', {
       userId: req.user.id,
       type,
       date,
@@ -951,6 +978,12 @@ app.post('/api/reports', auth, upload.array('pictures', 5), async (req, res) => 
       location,
       picturesCount: pictureUrls.length
     });
+
+    // Validate that the Report model exists
+    if (!Report) {
+      console.error('❌ Report model not found!');
+      return res.status(500).json({ message: 'Report model not available' });
+    }
 
     const report = new Report({
       userId: req.user.id,
@@ -962,15 +995,48 @@ app.post('/api/reports', auth, upload.array('pictures', 5), async (req, res) => 
       pictures: pictureUrls,
     });
 
+    console.log('💾 Saving report to database...');
     await report.save();
-    console.log('Report saved successfully with ID:', report._id);
-    res.status(201).json({ message: 'Report submitted successfully', report });
+    console.log('✅ Report saved successfully with ID:', report._id);
+    
+    res.status(201).json({ 
+      message: 'Report submitted successfully', 
+      report: {
+        id: report._id,
+        type: report.type,
+        date: report.date,
+        time: report.time,
+        message: report.message,
+        location: report.location,
+        picturesCount: report.pictures.length
+      }
+    });
+    
   } catch (err) {
-    console.error('Error submitting report:', err);
-    console.error('Error stack:', err.stack);
-    console.error('Request body:', req.body);
-    console.error('User object:', req.user);
-    res.status(500).json({ message: 'Server error', error: err.message });
+    console.error('❌ Error submitting report:', err);
+    console.error('❌ Error name:', err.name);
+    console.error('❌ Error message:', err.message);
+    console.error('❌ Error stack:', err.stack);
+    console.error('❌ Request body:', req.body);
+    console.error('❌ User object:', req.user);
+    console.error('❌ Files:', req.files);
+    
+    // Send more specific error messages
+    let errorMessage = 'Server error';
+    if (err.name === 'ValidationError') {
+      errorMessage = 'Validation error: ' + err.message;
+    } else if (err.name === 'MongoError') {
+      errorMessage = 'Database error: ' + err.message;
+    }
+    
+    res.status(500).json({ 
+      message: errorMessage, 
+      error: err.message,
+      details: {
+        name: err.name,
+        stack: err.stack
+      }
+    });
   }
 });
 
