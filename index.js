@@ -911,6 +911,90 @@ app.get('/api/test', (req, res) => {
   });
 });
 
+// Debug endpoint to check attendance data
+app.get('/api/debug/attendance', auth, async (req, res) => {
+  try {
+    const today = new Date().toISOString().slice(0, 10);
+    const users = await User.find({});
+    const todayAttendance = await Attendance.find({ date: today });
+    
+    res.json({
+      today,
+      totalUsers: users.length,
+      users: users.map(u => ({ id: u._id, name: u.name, employeeId: u.employeeId })),
+      todayAttendance: todayAttendance.map(att => ({
+        userId: att.userId,
+        date: att.date,
+        startTime: att.startTime,
+        endTime: att.endTime,
+        lunchStartTime: att.lunchStartTime,
+        lunchEndTime: att.lunchEndTime
+      }))
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Test endpoint to create sample data
+app.post('/api/debug/create-test-data', async (req, res) => {
+  try {
+    // Create a test user if it doesn't exist
+    let testUser = await User.findOne({ name: 'Test User2' });
+    if (!testUser) {
+      testUser = new User({
+        name: 'Test User2',
+        employeeId: 'TEST002',
+        password: 'test123',
+        isAdmin: false
+      });
+      await testUser.save();
+      console.log('✅ Test user created:', testUser._id);
+    }
+
+    // Create today's attendance record if it doesn't exist
+    const today = new Date().toISOString().slice(0, 10);
+    let testAttendance = await Attendance.findOne({ 
+      userId: testUser._id, 
+      date: today 
+    });
+    
+    if (!testAttendance) {
+      testAttendance = new Attendance({
+        userId: testUser._id,
+        date: today,
+        startTime: new Date(),
+        endTime: null,
+        lunchStartTime: null,
+        lunchEndTime: null,
+        locations: [{ 
+          time: new Date().toISOString(), 
+          lat: 40.7128, 
+          lng: -74.0060 
+        }]
+      });
+      await testAttendance.save();
+      console.log('✅ Test attendance created:', testAttendance._id);
+    } else {
+      // Update existing attendance to show as active
+      testAttendance.startTime = new Date();
+      testAttendance.endTime = null;
+      await testAttendance.save();
+      console.log('✅ Test attendance updated to active');
+    }
+
+    res.json({ 
+      message: 'Test data created/updated successfully',
+      userId: testUser._id,
+      attendanceId: testAttendance._id,
+      status: 'active'
+    });
+  } catch (err) {
+    console.error('❌ Error creating test data:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // User: Submit a report
 app.post('/api/reports', auth, upload.array('pictures', 5), async (req, res) => {
   try {
@@ -1151,25 +1235,36 @@ app.get('/api/live/status', auth, async (req, res) => {
       
       let status = 'offline';
       let lastSeen = null;
+      let lastSeenFormatted = 'Never';
       
       if (userAttendance) {
-        if (userAttendance.startTime && !userAttendance.endTime) {
+        // Convert string dates to Date objects for comparison
+        const startTime = userAttendance.startTime ? new Date(userAttendance.startTime) : null;
+        const endTime = userAttendance.endTime ? new Date(userAttendance.endTime) : null;
+        const lunchStartTime = userAttendance.lunchStartTime ? new Date(userAttendance.lunchStartTime) : null;
+        const lunchEndTime = userAttendance.lunchEndTime ? new Date(userAttendance.lunchEndTime) : null;
+        
+        if (startTime && !endTime) {
           // Work started but not ended
-          if (userAttendance.lunchStartTime && !userAttendance.lunchEndTime) {
+          if (lunchStartTime && !lunchEndTime) {
             status = 'break';
-            lastSeen = userAttendance.lunchStartTime;
+            lastSeen = lunchStartTime;
+            lastSeenFormatted = formatTimeAgo(lunchStartTime);
           } else {
             status = 'active';
-            lastSeen = userAttendance.startTime;
+            lastSeen = startTime;
+            lastSeenFormatted = formatTimeAgo(startTime);
           }
-        } else if (userAttendance.endTime) {
+        } else if (endTime) {
           // Work ended
           status = 'offline';
-          lastSeen = userAttendance.endTime;
-        } else if (userAttendance.startTime) {
+          lastSeen = endTime;
+          lastSeenFormatted = formatTimeAgo(endTime);
+        } else if (startTime) {
           // Only start time recorded (should be active)
           status = 'active';
-          lastSeen = userAttendance.startTime;
+          lastSeen = startTime;
+          lastSeenFormatted = formatTimeAgo(startTime);
         }
       }
       
@@ -1184,7 +1279,8 @@ app.get('/api/live/status', auth, async (req, res) => {
             lunchEndTime: userAttendance.lunchEndTime
           } : null,
           calculatedStatus: status,
-          lastSeen
+          lastSeen,
+          lastSeenFormatted
         });
       }
       
@@ -1194,6 +1290,7 @@ app.get('/api/live/status', auth, async (req, res) => {
         post: user.location?.name || 'Unassigned',
         status,
         lastSeen,
+        lastSeenFormatted,
         employeeId: user.employeeId
       };
     });
@@ -1213,17 +1310,17 @@ app.get('/api/live/status', auth, async (req, res) => {
       .map(att => {
         const user = users.find(u => u._id.toString() === att.userId.toString());
         let type = 'checkin';
-        let time = att.startTime;
+        let time = att.startTime ? new Date(att.startTime) : null;
         
         if (att.lunchStartTime && !att.lunchEndTime) {
           type = 'lunch_start';
-          time = att.lunchStartTime;
+          time = att.lunchStartTime ? new Date(att.lunchStartTime) : null;
         } else if (att.lunchEndTime) {
           type = 'lunch_end';
-          time = att.lunchEndTime;
+          time = att.lunchEndTime ? new Date(att.lunchEndTime) : null;
         } else if (att.endTime) {
           type = 'checkout';
-          time = att.endTime;
+          time = att.endTime ? new Date(att.endTime) : null;
         }
         
         return {
@@ -1232,10 +1329,11 @@ app.get('/api/live/status', auth, async (req, res) => {
           post: user?.location?.name || 'Unknown',
           type,
           time,
-          timeAgo: formatTimeAgo(new Date(time))
+          timeAgo: time ? formatTimeAgo(time) : 'Unknown'
         };
       })
-      .sort((a, b) => new Date(b.time) - new Date(a.time));
+      .filter(activity => activity.time) // Only include activities with valid times
+      .sort((a, b) => b.time - a.time);
     
     res.json({
       liveData: {
