@@ -46,7 +46,7 @@ const app = express();
 app.use(cors({
   origin: [
     'https://attendence-manager-frontend.vercel.app',
-    'https://attendence-manager-frontend-jrg6.vercel.app/',
+    'https://attendence-manager-frontend-jrg6.vercel.app',
     'http://localhost:5173',
     'http://localhost:5001',
     '*'
@@ -1377,3 +1377,4 @@ app.use((req, res) => {
 const PORT = process.env.PORT || 5001;  
 
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+
